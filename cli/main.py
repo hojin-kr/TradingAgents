@@ -776,20 +776,11 @@ def update_research_team_status(status):
         message_buffer.update_agent_status(agent, status)
 
 
-def run_analysis():
-    # First get all user selections
-    selections = get_user_selections()
-
-    # Create config with selected research depth
-    config = DEFAULT_CONFIG.copy()
-    config["max_debate_rounds"] = selections["research_depth"]
-    config["max_risk_discuss_rounds"] = selections["research_depth"]
-    config["quick_think_llm"] = selections["shallow_thinker"]
-    config["deep_think_llm"] = selections["deep_thinker"]
-
+def run_analysis(config: dict):
+    """Run the analysis with the provided configuration."""
     # Initialize the graph
     graph = TradingAgentsGraph(
-        [analyst.value for analyst in selections["analysts"]], config=config, debug=True
+        config["analysts"], config=config, debug=True
     )
 
     # Now start the display layout
@@ -800,13 +791,13 @@ def run_analysis():
         update_display(layout)
 
         # Add initial messages
-        message_buffer.add_message("System", f"Selected ticker: {selections['ticker']}")
+        message_buffer.add_message("System", f"Selected ticker: {config['ticker']}")
         message_buffer.add_message(
-            "System", f"Analysis date: {selections['analysis_date']}"
+            "System", f"Analysis date: {config['analysis_date']}"
         )
         message_buffer.add_message(
             "System",
-            f"Selected analysts: {', '.join(analyst.value for analyst in selections['analysts'])}",
+            f"Selected analysts: {', '.join(config['analysts'])}",
         )
         update_display(layout)
 
@@ -821,19 +812,19 @@ def run_analysis():
         message_buffer.final_report = None
 
         # Update agent status to in_progress for the first analyst
-        first_analyst = f"{selections['analysts'][0].value.capitalize()} Analyst"
+        first_analyst = f"{config['analysts'][0].capitalize()} Analyst"
         message_buffer.update_agent_status(first_analyst, "in_progress")
         update_display(layout)
 
         # Create spinner text
         spinner_text = (
-            f"Analyzing {selections['ticker']} on {selections['analysis_date']}..."
+            f"Analyzing {config['ticker']} on {config['analysis_date']}..."
         )
         update_display(layout, spinner_text)
 
         # Initialize state and get graph args
         init_agent_state = graph.propagator.create_initial_state(
-            selections["ticker"], selections["analysis_date"]
+            config["ticker"], config["analysis_date"]
         )
         args = graph.propagator.get_graph_args()
 
@@ -874,7 +865,7 @@ def run_analysis():
                     )
                     message_buffer.update_agent_status("Market Analyst", "completed")
                     # Set next analyst to in_progress
-                    if "social" in selections["analysts"]:
+                    if "social" in config["analysts"]:
                         message_buffer.update_agent_status(
                             "Social Analyst", "in_progress"
                         )
@@ -885,7 +876,7 @@ def run_analysis():
                     )
                     message_buffer.update_agent_status("Social Analyst", "completed")
                     # Set next analyst to in_progress
-                    if "news" in selections["analysts"]:
+                    if "news" in config["analysts"]:
                         message_buffer.update_agent_status(
                             "News Analyst", "in_progress"
                         )
@@ -896,7 +887,7 @@ def run_analysis():
                     )
                     message_buffer.update_agent_status("News Analyst", "completed")
                     # Set next analyst to in_progress
-                    if "fundamentals" in selections["analysts"]:
+                    if "fundamentals" in config["analysts"]:
                         message_buffer.update_agent_status(
                             "Fundamentals Analyst", "in_progress"
                         )
@@ -1078,7 +1069,7 @@ def run_analysis():
             message_buffer.update_agent_status(agent, "completed")
 
         message_buffer.add_message(
-            "Analysis", f"Completed analysis for {selections['analysis_date']}"
+            "Analysis", f"Completed analysis for {config['analysis_date']}"
         )
 
         # Update final report sections
@@ -1093,8 +1084,21 @@ def run_analysis():
 
 
 @app.command()
-def analyze():
-    run_analysis()
+def analyze(
+    ticker: str = typer.Argument(
+        None,
+        help="Ticker symbol to analyze (e.g., AAPL, GOOGL, SPY). If not provided, uses default from config."
+    )
+):
+    """Run the trading analysis with the specified ticker."""
+    # Get configuration from DEFAULT_CONFIG
+    config = DEFAULT_CONFIG.copy()
+    
+    # Override ticker if provided
+    if ticker:
+        config["ticker"] = ticker.upper()
+    
+    run_analysis(config)
 
 
 if __name__ == "__main__":

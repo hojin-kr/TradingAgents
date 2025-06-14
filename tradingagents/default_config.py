@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
@@ -16,4 +17,11 @@ DEFAULT_CONFIG = {
     "max_recur_limit": 100,
     # Tool settings
     "online_tools": True,
+    # Analysis settings
+    "ticker": "SPY",  # Default ticker symbol
+    "analysis_date": datetime.now().strftime("%Y-%m-%d"),  # Default analysis date
+    "analysts": ["market", "social", "news", "fundamentals"],  # Default selected analysts
+    "research_depth": 1,  # Default research depth
+    "shallow_thinker": "gpt-4o-mini",  # Default shallow thinking model
+    "deep_thinker": "o4-mini",  # Default deep thinking model
 }
