@@ -20,7 +20,6 @@ from rich.rule import Rule
 import os
 from openai import OpenAI
 
-from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 from cli.models import AnalystType
 from cli.utils import *
@@ -730,23 +729,27 @@ def display_complete_report(final_state):
         # Get analysis date and ticker
         analysis_date = final_state.get("trade_date", datetime.datetime.now().strftime("%Y-%m-%d"))
         ticker = final_state.get("company_of_interest", "UNKNOWN")
-        
-        # Extract decision using LLM
-        decision = "HOLD"  # Default decision
+
+        # Ensure local references for nested states
+        risk_state = final_state.get("risk_debate_state")
+        debate_state = final_state.get("investment_debate_state")
+
+        # Extract final (portfolio manager) decision using LLM
+        final_decision = "HOLD"
         if risk_state and risk_state.get("judge_decision"):
-            decision = get_trade_decision(risk_state["judge_decision"])
-        
-        # Save each section
-        base_dir = f"/tmp/{analysis_date}/{decision}/{ticker}/EN"
-        os.makedirs(base_dir, exist_ok=True)
+            final_decision = get_trade_decision(risk_state["judge_decision"])
+
+        # Preserve existing behavior: save complete report under final decision directory
+        base_dir_final = f"/tmp/{analysis_date}/{final_decision}/{ticker}/EN"
+        os.makedirs(base_dir_final, exist_ok=True)
 
         # Save complete report
-        complete_filename = f"{base_dir}/complete.md"
+        complete_filename = f"{base_dir_final}/complete.md"
         with open(complete_filename, "w", encoding="utf-8") as f:
             f.write(markdown_content)
         console.print(f"\n[green]Complete report saved to: {complete_filename}[/green]")
 
-        # Save individual sections
+        # Save individual sections (as before) under final decision directory
         sections = {
             "market_report": "Market Analysis",
             "sentiment_report": "Social Sentiment",
@@ -760,11 +763,69 @@ def display_complete_report(final_state):
         for section_key, section_title in sections.items():
             if final_state.get(section_key):
                 section_content = final_state[section_key]
-                section_filename = f"{base_dir}/{section_key}.md"
+                section_filename = f"{base_dir_final}/{section_key}.md"
                 with open(section_filename, "w", encoding="utf-8") as f:
                     f.write(f"# {section_title}\n\n{section_content}")
                 console.print(f"[green]{section_title} saved to: {section_filename}[/green]")
-        
+
+        # New behavior: classify each agent's decision and save under per-agent decision directories
+        def slugify(name: str) -> str:
+            return (
+                name.strip().lower().replace("/", "-").replace(" ", "_").replace("(", "").replace(")", "")
+            )
+
+        agent_texts = []
+
+        # Analyst Team
+        if final_state.get("market_report"):
+            agent_texts.append(("Market Analyst", final_state["market_report"]))
+        if final_state.get("sentiment_report"):
+            agent_texts.append(("Social Analyst", final_state["sentiment_report"]))
+        if final_state.get("news_report"):
+            agent_texts.append(("News Analyst", final_state["news_report"]))
+        if final_state.get("fundamentals_report"):
+            agent_texts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+
+        # Research Team
+        if debate_state:
+            if debate_state.get("bull_history"):
+                agent_texts.append(("Bull Researcher", debate_state["bull_history"]))
+            if debate_state.get("bear_history"):
+                agent_texts.append(("Bear Researcher", debate_state["bear_history"]))
+            if debate_state.get("judge_decision"):
+                agent_texts.append(("Research Manager", debate_state["judge_decision"]))
+
+        # Trader
+        if final_state.get("trader_investment_plan"):
+            agent_texts.append(("Trader", final_state["trader_investment_plan"]))
+
+        # Risk Management Team
+        if risk_state:
+            if risk_state.get("risky_history"):
+                agent_texts.append(("Aggressive Analyst", risk_state["risky_history"]))
+            if risk_state.get("safe_history"):
+                agent_texts.append(("Conservative Analyst", risk_state["safe_history"]))
+            if risk_state.get("neutral_history"):
+                agent_texts.append(("Neutral Analyst", risk_state["neutral_history"]))
+            if risk_state.get("judge_decision"):
+                agent_texts.append(("Portfolio Manager", risk_state["judge_decision"]))
+
+        # Save each agent's content under its own decision classification
+        for agent_name, agent_content in agent_texts:
+            try:
+                agent_decision = get_trade_decision(agent_content)
+            except Exception:
+                agent_decision = "HOLD"
+
+            agent_dir = f"/tmp/{analysis_date}/{agent_decision}/{ticker}/EN/{slugify(agent_name)}"
+            os.makedirs(agent_dir, exist_ok=True)
+            agent_file = f"{agent_dir}/report.md"
+            with open(agent_file, "w", encoding="utf-8") as f:
+                f.write(f"# {agent_name}\n\n{agent_content}")
+            console.print(
+                f"[green]{agent_name} saved to: {agent_file} (decision: {agent_decision})[/green]"
+            )
+
     except Exception as e:
         console.print(f"\n[red]Error saving report: {str(e)}[/red]")
 
@@ -778,6 +839,8 @@ def update_research_team_status(status):
 
 def run_analysis(config: dict):
     """Run the analysis with the provided configuration."""
+    # Lazy import to avoid heavy dependencies during CLI help
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
     # Initialize the graph
     graph = TradingAgentsGraph(
         config["analysts"], config=config, debug=True
