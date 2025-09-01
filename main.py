@@ -1,19 +1,28 @@
-from tradingagents.graph.trading_graph import TradingAgentsGraph
+import os
+import sys
+from datetime import datetime
+
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.simple_runner import run_and_save_reports
 
-# Create a custom config
-config = DEFAULT_CONFIG.copy()
-config["deep_think_llm"] = "gpt-4.1-nano"  # Use a different model
-config["quick_think_llm"] = "gpt-4.1-nano"  # Use a different model
-config["max_debate_rounds"] = 1  # Increase debate rounds
-config["online_tools"] = True  # Increase debate rounds
 
-# Initialize with custom config
-ta = TradingAgentsGraph(debug=True, config=config)
+def main():
+    ticker = os.environ.get("TA_TICKER", DEFAULT_CONFIG.get("ticker", "SPY"))
+    analysis_date = os.environ.get(
+        "TA_DATE", DEFAULT_CONFIG.get("analysis_date", datetime.now().strftime("%Y-%m-%d"))
+    )
 
-# forward propagate
-_, decision = ta.propagate("NVDA", "2024-05-10")
-print(decision)
+    # Minimal overrides: keep online_tools and quick model configurable
+    config = DEFAULT_CONFIG.copy()
+    if "TA_ONLINE_TOOLS" in os.environ:
+        config["online_tools"] = os.environ["TA_ONLINE_TOOLS"].lower() in ("1", "true", "yes")
+    if "TA_QUICK_LLM" in os.environ:
+        config["quick_think_llm"] = os.environ["TA_QUICK_LLM"]
 
-# Memorize mistakes and reflect
-# ta.reflect_and_remember(1000) # parameter is the position returns
+    outputs = run_and_save_reports(ticker, analysis_date, config=config, out_dir=os.environ.get("TA_OUT_DIR"))
+    for key, path in outputs.items():
+        print(f"{key} -> {path}")
+
+
+if __name__ == "__main__":
+    main()
